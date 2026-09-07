@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entry-Level CS Jobs Board</title>
+<style>
+  body{font-family:-apple-system,"Segoe UI",Arial,sans-serif;font-size:14px;color:#222;max-width:1100px;margin:0 auto;padding:16px}
+  #banner{background:#f5f5f5;border:1px solid #ddd;padding:8px 12px;margin-bottom:12px;font-size:13px}
+  #filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  #filters input,#filters select{font-size:14px;padding:6px 8px}
+  #q{flex:2;min-width:200px}
+  table{border-collapse:collapse;width:100%}
+  th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}
+  th{background:#f5f5f5;position:sticky;top:0}
+  #status{color:#666;margin:8px 0}
+</style>
+</head>
+<body>
+<h2>Entry-Level CS Jobs Board</h2>
+<div id="banner">loading…</div>
+<div id="filters">
+  <input id="q" type="search" placeholder="search title or company…">
+  <select id="company"><option value="">all companies</option></select>
+  <select id="sort">
+    <option value="new">newest first</option>
+    <option value="old">oldest first</option>
+  </select>
+</div>
+<div id="status"></div>
+<table>
+  <thead><tr><th>Company</th><th>Position</th><th>Location</th><th>Fit</th><th>First seen</th><th>Apply</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+let JOBS = [];
+function esc(s) { return String(s == null ? "" : s).replace(/</g, "&lt;"); }
+async function init() {
+  const banner = document.getElementById("banner");
+  try {
+    const [jobs, meta] = await Promise.all([
+      fetch("jobs.json").then(r => { if (!r.ok) throw new Error("jobs.json HTTP " + r.status); return r.json(); }),
+      fetch("meta.json").then(r => { if (!r.ok) throw new Error("meta.json HTTP " + r.status); return r.json(); })
+    ]);
+    JOBS = jobs;
+    const ages = Object.values(meta.per_company || {}).map(c => c.last_completed || "").sort().reverse();
+    banner.textContent = meta.listed + " roles · " + meta.companies + " boards · rebuilt " +
+      (meta.generated_at || "?").replace("T", " ").slice(0, 16) + " UTC" +
+      (ages.length ? " · freshest board " + ages[0] : "");
+    const sel = document.getElementById("company");
+    Object.keys(meta.per_company || {}).sort().forEach(c => {
+      const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
+    });
+  } catch (e) { banner.textContent = "error: " + e.message; return; }
+  render();
+}
+function render() {
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const co = document.getElementById("company").value;
+  const newest = document.getElementById("sort").value === "new";
+  let rows = JOBS.filter(j =>
+    (!co || j.company === co) &&
+    (!q || (j.title + " " + j.company).toLowerCase().includes(q)));
+  rows.sort((a, b) => newest
+    ? (b.first_seen + b.company).localeCompare(a.first_seen + a.company)
+    : (a.first_seen + a.company).localeCompare(b.first_seen + b.company));
+  const shown = rows.slice(0, 300);
+  document.getElementById("status").textContent =
+    rows.length + " roles" + (rows.length > 300 ? " (showing first 300 — narrow the search)" : "");
+  document.getElementById("rows").innerHTML = shown.map(j =>
+    "<tr><td><b>" + esc(j.company) + "</b></td><td>" + esc(j.title) + "</td><td>" + esc(j.location) +
+    "</td><td>" + esc(j.profile_fit) + "</td><td>" + esc(j.first_seen || "-") +
+    '</td><td><a href="' + esc(j.url) + '">apply</a></td></tr>').join("");
+}
+let t;
+document.getElementById("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(render, 200); });
+document.getElementById("company").addEventListener("change", render);
+document.getElementById("sort").addEventListener("change", render);
+init();
+</script>
+</body>
+</html>
