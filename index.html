@@ -14,6 +14,10 @@
   th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}
   th{background:#f5f5f5;position:sticky;top:0}
   #status{color:#666;margin:8px 0}
+  .lvl{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600}
+  .lvl-entry{background:#dcfce7;color:#15803d}
+  .lvl-not{background:#f1f1f1;color:#777}
+  .lvl-na{color:#aaa}
 </style>
 </head>
 <body>
@@ -22,6 +26,7 @@
 <div id="filters">
   <input id="q" type="search" placeholder="search title or company…">
   <select id="company"><option value="">all companies</option></select>
+  <select id="level"><option value="">all levels</option><option value="ENTRY">entry-level ✓</option><option value="NOT">not entry</option><option value="NA">unlabeled</option></select>
   <select id="sort">
     <option value="new">newest first</option>
     <option value="old">oldest first</option>
@@ -29,12 +34,17 @@
 </div>
 <div id="status"></div>
 <table>
-  <thead><tr><th>Company</th><th>Position</th><th>Location</th><th>Fit</th><th>First seen</th><th>Apply</th></tr></thead>
+  <thead><tr><th>Company</th><th>Position</th><th>Location</th><th>Fit</th><th>Level</th><th>First seen</th><th>Apply</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <script>
 let JOBS = [];
 function esc(s) { return String(s == null ? "" : s).replace(/</g, "&lt;"); }
+function lvlCell(j) {
+  if (j.desc_label === "ENTRY") return '<span class="lvl lvl-entry" title="desc-verified, confidence ' + esc(j.desc_conf) + '">entry ✓</span>';
+  if (j.desc_label === "NOT") return '<span class="lvl lvl-not" title="desc-verified, confidence ' + esc(j.desc_conf) + '">not entry</span>';
+  return '<span class="lvl-na">—</span>';
+}
 async function init() {
   const banner = document.getElementById("banner");
   try {
@@ -46,7 +56,8 @@ async function init() {
     const ages = Object.values(meta.per_company || {}).map(c => c.last_completed || "").sort().reverse();
     banner.textContent = meta.listed + " roles · " + meta.companies + " boards · rebuilt " +
       (meta.generated_at || "?").replace("T", " ").slice(0, 16) + " UTC" +
-      (ages.length ? " · freshest board " + ages[0] : "");
+      (ages.length ? " · freshest board " + ages[0] : "") +
+      (meta.desc_entry ? " · " + meta.desc_entry + " desc-verified entry-level" : "");
     const sel = document.getElementById("company");
     Object.keys(meta.per_company || {}).sort().forEach(c => {
       const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
@@ -57,9 +68,11 @@ async function init() {
 function render() {
   const q = document.getElementById("q").value.trim().toLowerCase();
   const co = document.getElementById("company").value;
+  const lv = document.getElementById("level").value;
   const newest = document.getElementById("sort").value === "new";
   let rows = JOBS.filter(j =>
     (!co || j.company === co) &&
+    (!lv || (lv === "NA" ? (j.desc_label !== "ENTRY" && j.desc_label !== "NOT") : j.desc_label === lv)) &&
     (!q || (j.title + " " + j.company).toLowerCase().includes(q)));
   rows.sort((a, b) => newest
     ? (b.first_seen + b.company).localeCompare(a.first_seen + a.company)
@@ -69,12 +82,13 @@ function render() {
     rows.length + " roles" + (rows.length > 300 ? " (showing first 300 — narrow the search)" : "");
   document.getElementById("rows").innerHTML = shown.map(j =>
     "<tr><td><b>" + esc(j.company) + "</b></td><td>" + esc(j.title) + "</td><td>" + esc(j.location) +
-    "</td><td>" + esc(j.profile_fit) + "</td><td>" + esc(j.first_seen || "-") +
+    "</td><td>" + esc(j.profile_fit) + "</td><td>" + lvlCell(j) + "</td><td>" + esc(j.first_seen || "-") +
     '</td><td><a href="' + esc(j.url) + '">apply</a></td></tr>').join("");
 }
 let t;
 document.getElementById("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(render, 200); });
 document.getElementById("company").addEventListener("change", render);
+document.getElementById("level").addEventListener("change", render);
 document.getElementById("sort").addEventListener("change", render);
 init();
 </script>
