@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Entry-Level CS Jobs Board</title>
 <style>
+  html{color-scheme:light dark}
   body{font-family:-apple-system,"Segoe UI",Arial,sans-serif;font-size:14px;color:#222;max-width:1100px;margin:0 auto;padding:16px}
   #banner{background:#f5f5f5;border:1px solid #ddd;padding:8px 12px;margin-bottom:12px;font-size:13px}
   #filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
@@ -18,6 +19,18 @@
   .lvl-entry{background:#dcfce7;color:#15803d}
   .lvl-not{background:#f1f1f1;color:#777}
   .lvl-na{color:#aaa}
+  @media (prefers-color-scheme: dark){
+    body{background:#0d1117;color:#e6edf3}
+    #banner{background:#161b22;border-color:#30363d}
+    #filters input,#filters select{background:#161b22;color:#e6edf3;border:1px solid #30363d}
+    th,td{border-color:#30363d}
+    th{background:#161b22}
+    #status{color:#8b949e}
+    a{color:#58a6ff}
+    .lvl-entry{background:#12361f;color:#4ade80}
+    .lvl-not{background:#21262d;color:#8b949e}
+    .lvl-na{color:#6e7681}
+  }
 </style>
 </head>
 <body>
