@@ -6,16 +6,22 @@
 <title>Entry-Level CS Jobs Board</title>
 <style>
   html{color-scheme:light dark}
-  body{font-family:-apple-system,"Segoe UI",Arial,sans-serif;font-size:14px;color:#222;max-width:1100px;margin:0 auto;padding:16px}
+  body{font-family:-apple-system,"Segoe UI",Arial,sans-serif;font-size:14px;color:#222;max-width:1150px;margin:0 auto;padding:16px}
   #banner{background:#f5f5f5;border:1px solid #ddd;padding:8px 12px;margin-bottom:12px;font-size:13px}
-  #filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  #filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
   #filters input,#filters select{font-size:14px;padding:6px 8px}
-  #q{flex:2;min-width:200px}
+  #q{flex:2;min-width:180px}
+  #loc,#excl{flex:1;min-width:140px}
+  .chk{display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:13px;margin:4px 0 8px;color:#444}
+  .chk label{display:flex;gap:4px;align-items:center;cursor:pointer}
+  #actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  #actions button{font-size:13px;padding:5px 10px;cursor:pointer}
   table{border-collapse:collapse;width:100%}
   th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}
   th{background:#f5f5f5;position:sticky;top:0}
   #status{color:#666;margin:8px 0}
-  .lvl{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600}
+  #daysum{color:#666;font-size:13px;margin:0 0 8px}
+  .lvl{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600;white-space:nowrap}
   .lvl-entry{background:#dcfce7;color:#15803d}
   .lvl-not{background:#f1f1f1;color:#777}
   .lvl-na{color:#aaa}
@@ -26,11 +32,22 @@
     th,td{border-color:#30363d}
     th{background:#161b22}
     #status{color:#8b949e}
+    #daysum{color:#8b949e}
     a{color:#58a6ff}
     .lvl-entry{background:#12361f;color:#4ade80}
     .lvl-not{background:#21262d;color:#8b949e}
     .lvl-na{color:#6e7681}
+    tr.day td{background:#161b22;border-color:#30363d}
   }
+  tr.day td{background:#eef4ff;font-weight:700;border-top:2px solid #99b6e8;cursor:pointer}
+  tr.day td .cnt{font-weight:400;color:#456}
+  tr.is-hidden{opacity:.45}
+  tr.is-applied td:nth-child(2){text-decoration:line-through;color:#888}
+  .pill{display:inline-block;font-size:11px;background:#fef3c7;color:#92400e;border-radius:8px;padding:0 6px;margin-left:6px;font-weight:700}
+  .pill.saved{background:#dbeafe;color:#1d4ed8}
+  .rowbtns{display:flex;gap:4px;margin-top:4px}
+  .rowbtns button{font-size:11px;padding:1px 6px;cursor:pointer}
+  .ev{color:#888;font-size:11px;display:block;margin-top:2px}
 </style>
 </head>
 <body>
@@ -38,27 +55,162 @@
 <div id="banner">loading…</div>
 <div id="filters">
   <input id="q" type="search" placeholder="search title or company…">
+  <input id="excl" type="search" placeholder="exclude: senior, staff, principal">
+  <input id="loc" type="search" placeholder="location filter…">
   <select id="company"><option value="">all companies</option></select>
   <select id="level"><option value="">all levels</option><option value="ENTRY">entry-level ✓</option><option value="NOT">not entry</option><option value="NA">unlabeled</option></select>
+  <select id="fit"><option value="">all fits</option></select>
+  <select id="day"><option value="">all days</option></select>
   <select id="sort">
     <option value="new">newest first</option>
     <option value="old">oldest first</option>
+    <option value="fit">best fit first</option>
+  </select>
+  <select id="view">
+    <option value="day">group by day</option>
+    <option value="flat">flat list</option>
   </select>
 </div>
+<div class="chk">
+  <label><input type="checkbox" id="c-entry"> entry-only</label>
+  <label><input type="checkbox" id="c-hidehidden" checked> hide hidden</label>
+  <label><input type="checkbox" id="c-hideapplied"> hide applied</label>
+  <label><input type="checkbox" id="c-saved"> ★ saved only</label>
+  <label><input type="checkbox" id="c-new"> 🆕 new since last visit only</label>
+  <button id="reset" type="button">reset</button>
+</div>
+<div id="actions">
+  <button id="csv" type="button">export CSV</button>
+  <button id="copy" type="button">copy links</button>
+  <button id="open10" type="button">open top 10</button>
+  <span id="store-stat" style="font-size:12px;color:#888"></span>
+</div>
 <div id="status"></div>
+<div id="daysum"></div>
 <table>
   <thead><tr><th>Company</th><th>Position</th><th>Location</th><th>Fit</th><th>Level</th><th>First seen</th><th>Apply</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <script>
 let JOBS = [];
-function esc(s) { return String(s == null ? "" : s).replace(/</g, "&lt;"); }
-function lvlCell(j) {
-  if (j.desc_label === "ENTRY") return '<span class="lvl lvl-entry" title="desc-verified, confidence ' + esc(j.desc_conf) + '">entry ✓</span>';
-  if (j.desc_label === "NOT") return '<span class="lvl lvl-not" title="desc-verified, confidence ' + esc(j.desc_conf) + '">not entry</span>';
-  return '<span class="lvl-na">—</span>';
+let META = null;
+let collapsed = {};
+const LS = { h: "jb_hidden", a: "jb_applied", s: "jb_saved", v: "jb_last_visit_day" };
+const getSet = k => { try { return new Set(JSON.parse(localStorage.getItem(k) || "[]")); } catch { return new Set(); } };
+let HIDDEN = getSet(LS.h), APPLIED = getSet(LS.a), SAVED = getSet(LS.s);
+const saveSets = () => {
+  localStorage.setItem(LS.h, JSON.stringify([...HIDDEN]));
+  localStorage.setItem(LS.a, JSON.stringify([...APPLIED]));
+  localStorage.setItem(LS.s, JSON.stringify([...SAVED]));
+  updStoreStat();
+};
+function updStoreStat(){ document.getElementById("store-stat").textContent = HIDDEN.size + " hidden · " + APPLIED.size + " applied · " + SAVED.size + " saved"; }
+function esc(s){ return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function lvlCell(j){
+  if(j.desc_label === "ENTRY") return '<span class="lvl lvl-entry" title="desc-verified, conf ' + esc(j.desc_conf) + ' · ' + esc(j.entry_evidence||"") + '">entry ✓</span>';
+  if(j.desc_label === "NOT") return '<span class="lvl lvl-not" title="desc-verified, conf ' + esc(j.desc_conf) + ' · ' + esc(j.entry_evidence||"") + '">not entry</span>';
+  return '<span class="lvl-na" title="' + esc(j.entry_evidence||"") + '">—</span>';
 }
-async function init() {
+const FIT_RANK = { "Strong":0, "Good":1, "Broad SWE":2, "Technical / Adjacent":3, "Adjacent":4 };
+function dayLabel(d){
+  try { const dt = new Date(d + "T12:00:00Z"); return dt.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"}) + " (" + d + ")"; }
+  catch { return d; }
+}
+function filteredRows(){
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const ex = document.getElementById("excl").value.toLowerCase().split(",").map(s=>s.trim()).filter(Boolean);
+  const lf = document.getElementById("loc").value.trim().toLowerCase();
+  const co = document.getElementById("company").value;
+  const lv = document.getElementById("level").value;
+  const ft = document.getElementById("fit").value;
+  const dy = document.getElementById("day").value;
+  const sort = document.getElementById("sort").value;
+  const onlyEntry = document.getElementById("c-entry").checked;
+  const hideH = document.getElementById("c-hidehidden").checked;
+  const hideA = document.getElementById("c-hideapplied").checked;
+  const savedOnly = document.getElementById("c-saved").checked;
+  const newOnly = document.getElementById("c-new").checked;
+  const lastVisit = localStorage.getItem(LS.v) || "";
+  let rows = JOBS.filter(j => {
+    if(co && j.company !== co) return false;
+    if(dy && (j.first_seen||"") !== dy) return false;
+    if(onlyEntry && j.desc_label !== "ENTRY") return false;
+    else if(lv && (lv === "NA" ? (j.desc_label === "ENTRY" || j.desc_label === "NOT") : j.desc_label !== lv)) return false;
+    if(ft && (j.profile_fit||"") !== ft) return false;
+    if(lf && !(String(j.location||"").toLowerCase().includes(lf))) return false;
+    if(q && !((j.title+" "+j.company+" "+(j.location||"")).toLowerCase().includes(q))) return false;
+    if(ex.length && ex.some(t => (j.title||"").toLowerCase().includes(t))) return false;
+    if(hideH && HIDDEN.has(j.url)) return false;
+    if(hideA && APPLIED.has(j.url)) return false;
+    if(savedOnly && !SAVED.has(j.url)) return false;
+    if(newOnly && lastVisit && !((j.first_seen||"") > lastVisit)) return false;
+    return true;
+  });
+  if(sort === "fit") rows.sort((a,b) => ((FIT_RANK[a.profile_fit]??9)-(FIT_RANK[b.profile_fit]??9)) || String(b.first_seen).localeCompare(String(a.first_seen)));
+  else if(sort === "old") rows.sort((a,b) => String(a.first_seen||"").localeCompare(String(b.first_seen||"")) || String(a.company).localeCompare(String(b.company)));
+  else rows.sort((a,b) => String(b.first_seen||"").localeCompare(String(a.first_seen||"")) || String(a.company).localeCompare(String(b.company)));
+  return rows;
+}
+function rowHtml(j){
+  const hid = HIDDEN.has(j.url), app = APPLIED.has(j.url), sav = SAVED.has(j.url);
+  const cls = (hid?"is-hidden ":"") + (app?"is-applied":"");
+  const isNew = isNewJob(j);
+  return "<tr class='" + cls + "' data-url='" + esc(j.url) + "'><td><b>" + esc(j.company) + "</b></td><td>" + esc(j.title) +
+    (isNew ? "<span class='pill'>NEW</span>" : "") + (sav ? "<span class='pill saved'>★</span>" : "") +
+    "<span class='ev'>" + esc(j.entry_evidence||"") + (j.desc_conf!=null ? " · conf " + esc(j.desc_conf) : "") + "</span>" +
+    "<div class='rowbtns'><button data-act='hide'>" + (hid?"unhide":"hide") + "</button>" +
+    "<button data-act='applied'>" + (app?"↩ reopen":"✓ applied") + "</button>" +
+    "<button data-act='saved'>" + (sav?"★ unsave":"☆ save") + "</button></div></td><td>" + esc(j.location) +
+    "</td><td>" + esc(j.profile_fit) + "</td><td>" + lvlCell(j) + "</td><td>" + esc(j.first_seen||"-") +
+    "</td><td><a href='" + esc(j.url) + "' target='_blank' rel='noopener'>apply</a></td></tr>";
+}
+function isNewJob(j){
+  const lv = localStorage.getItem(LS.v) || "";
+  return lv ? String(j.first_seen||"") > lv : false;
+}
+function render(){
+  const rows = filteredRows();
+  const view = document.getElementById("view").value;
+  const lastVisit = localStorage.getItem(LS.v) || "";
+  const newCount = lastVisit ? JOBS.filter(j => String(j.first_seen||"") > lastVisit).length : 0;
+  document.getElementById("status").textContent = rows.length + " roles" + (lastVisit ? " · " + newCount + " new since " + lastVisit : "");
+  // day summary: counts per first_seen within current filters (ignoring day filter)
+  const daySel = document.getElementById("day");
+  const curDay = daySel.value;
+  // build day counts from rows + also show overall day distribution
+  const counts = {};
+  rows.forEach(j => { counts[j.first_seen||"?"] = (counts[j.first_seen||"?"]||0)+1; });
+  const days = Object.keys(counts).sort().reverse();
+  document.getElementById("daysum").textContent = days.length ? "by day: " + days.map(d => d + " (" + counts[d] + ")").join(" · ") : "";
+  let html = "";
+  if(view === "day"){
+    let cur = null;
+    const sortedDays = [...days].sort((a,b) => document.getElementById("sort").value === "old" ? a.localeCompare(b) : b.localeCompare(a));
+    for(const d of sortedDays){
+      const list = rows.filter(j => (j.first_seen||"?") === d);
+      const col = collapsed[d] ? " ▸" : " ▾";
+      html += "<tr class='day' data-day='" + esc(d) + "'><td colspan='7'>" + esc(dayLabel(d)) + " <span class='cnt'>— " + list.length + " roles" + (collapsed[d] ? " (collapsed)" : "") + col + "</span></td></tr>";
+      if(!collapsed[d]) html += list.map(rowHtml).join("");
+    }
+  } else {
+    html = rows.slice(0, 1000).map(rowHtml).join("");
+    if(rows.length > 1000) html += "<tr><td colspan='7'>showing first 1000 — narrow filters</td></tr>";
+  }
+  document.getElementById("rows").innerHTML = html || "<tr><td colspan='7'>no matches — clear filters</td></tr>";
+  syncUrl();
+}
+function syncUrl(){
+  const p = new URLSearchParams();
+  ["q","excl","loc","company","level","fit","day","sort","view"].forEach(id => { const v = document.getElementById(id).value; if(v) p.set(id, v); });
+  ["c-entry","c-hidehidden","c-hideapplied","c-saved","c-new"].forEach(id => { if(document.getElementById(id).checked) p.set(id, "1"); });
+  history.replaceState(null, "", location.pathname + (p.toString() ? "?" + p : ""));
+}
+function fromUrl(){
+  const p = new URLSearchParams(location.search);
+  ["q","excl","loc","company","level","fit","day","sort","view"].forEach(id => { if(p.get(id) != null && document.getElementById(id)) document.getElementById(id).value = p.get(id); });
+  ["c-entry","c-hidehidden","c-hideapplied","c-saved","c-new"].forEach(id => { if(p.get(id) === "1") document.getElementById(id).checked = true; });
+}
+async function init(){
   const banner = document.getElementById("banner");
   try {
     const bust = "?v=" + Date.now();
@@ -66,44 +218,75 @@ async function init() {
       fetch("jobs.json" + bust, { cache: "no-store" }).then(r => { if (!r.ok) throw new Error("jobs.json HTTP " + r.status); return r.json(); }),
       fetch("meta.json" + bust, { cache: "no-store" }).then(r => { if (!r.ok) throw new Error("meta.json HTTP " + r.status); return r.json(); })
     ]);
-    JOBS = jobs;
-    const ages = Object.values(meta.per_company || {}).map(c => c.last_completed || "").sort().reverse();
+    JOBS = jobs; META = meta;
+    const ages = Object.values(meta.per_company||{}).map(c => c.last_completed||"").sort().reverse();
     banner.textContent = meta.listed + " roles · " + meta.companies + " boards · rebuilt " +
-      (meta.generated_at || "?").replace("T", " ").slice(0, 16) + " UTC" +
+      (meta.generated_at||"?").replace("T"," ").slice(0,16) + " UTC" +
       (ages.length ? " · freshest board " + ages[0] : "") +
       (meta.desc_entry ? " · " + meta.desc_entry + " desc-verified entry-level" : "");
+    // company select with counts
+    const cc = {}; jobs.forEach(j => { cc[j.company] = (cc[j.company]||0)+1; });
     const sel = document.getElementById("company");
-    Object.keys(meta.per_company || {}).sort().forEach(c => {
-      const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
-    });
-  } catch (e) { banner.textContent = "error: " + e.message; return; }
-  render();
-}
-function render() {
-  const q = document.getElementById("q").value.trim().toLowerCase();
-  const co = document.getElementById("company").value;
-  const lv = document.getElementById("level").value;
-  const newest = document.getElementById("sort").value === "new";
-  let rows = JOBS.filter(j =>
-    (!co || j.company === co) &&
-    (!lv || (lv === "NA" ? (j.desc_label !== "ENTRY" && j.desc_label !== "NOT") : j.desc_label === lv)) &&
-    (!q || (j.title + " " + j.company).toLowerCase().includes(q)));
-  rows.sort((a, b) => newest
-    ? (b.first_seen + b.company).localeCompare(a.first_seen + a.company)
-    : (a.first_seen + a.company).localeCompare(b.first_seen + b.company));
-  const shown = rows.slice(0, 300);
-  document.getElementById("status").textContent =
-    rows.length + " roles" + (rows.length > 300 ? " (showing first 300 — narrow the search)" : "");
-  document.getElementById("rows").innerHTML = shown.map(j =>
-    "<tr><td><b>" + esc(j.company) + "</b></td><td>" + esc(j.title) + "</td><td>" + esc(j.location) +
-    "</td><td>" + esc(j.profile_fit) + "</td><td>" + lvlCell(j) + "</td><td>" + esc(j.first_seen || "-") +
-    '</td><td><a href="' + esc(j.url) + '">apply</a></td></tr>').join("");
+    Object.keys(cc).sort().forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c + " (" + cc[c] + ")"; sel.appendChild(o); });
+    // fit select
+    const fc = {}; jobs.forEach(j => { fc[j.profile_fit||"—"] = (fc[j.profile_fit||"—"]||0)+1; });
+    const fsel = document.getElementById("fit");
+    Object.keys(fc).sort().forEach(f => { const o = document.createElement("option"); o.value = f === "—" ? "" : f; if(f === "—") return; o.textContent = f + " (" + fc[f] + ")"; fsel.appendChild(o); });
+    // day select
+    const dc = {}; jobs.forEach(j => { dc[j.first_seen||"?"] = (dc[j.first_seen||"?"]||0)+1; });
+    const dsel = document.getElementById("day");
+    Object.keys(dc).sort().reverse().forEach(d => { const o = document.createElement("option"); o.value = d; o.textContent = d + " (" + dc[d] + ")"; dsel.appendChild(o); });
+  } catch(e){ banner.textContent = "error: " + e.message; return; }
+  fromUrl();
+  // mark visit: set last-visit to max first_seen after first render so NEW badges work next time
+  render(); updStoreStat();
+  const maxDay = JOBS.map(j => j.first_seen||"").sort().reverse()[0] || "";
+  const prev = localStorage.getItem(LS.v) || "";
+  if(!prev && maxDay) { /* first visit: don't mark everything new */ localStorage.setItem(LS.v, maxDay); }
 }
 let t;
-document.getElementById("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(render, 200); });
-document.getElementById("company").addEventListener("change", render);
-document.getElementById("level").addEventListener("change", render);
-document.getElementById("sort").addEventListener("change", render);
+["q","excl","loc"].forEach(id => document.getElementById(id).addEventListener("input", () => { clearTimeout(t); t = setTimeout(render, 200); }));
+["company","level","fit","day","sort","view","c-entry","c-hidehidden","c-hideapplied","c-saved","c-new"].forEach(id => document.getElementById(id).addEventListener("change", render));
+document.getElementById("reset").addEventListener("click", () => {
+  ["q","excl","loc"].forEach(id => document.getElementById(id).value = "");
+  ["company","level","fit","day"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("sort").value = "new"; document.getElementById("view").value = "day";
+  ["c-entry","c-hideapplied","c-saved","c-new"].forEach(id => document.getElementById(id).checked = false);
+  document.getElementById("c-hidehidden").checked = true;
+  collapsed = {}; render();
+});
+document.getElementById("rows").addEventListener("click", e => {
+  const dayRow = e.target.closest("tr.day");
+  if(dayRow){ const d = dayRow.dataset.day; collapsed[d] = !collapsed[d]; render(); return; }
+  const btn = e.target.closest("button[data-act]");
+  if(!btn) return;
+  const tr = btn.closest("tr[data-url]"); const url = tr.dataset.url;
+  const act = btn.dataset.act;
+  if(act === "hide"){ HIDDEN.has(url) ? HIDDEN.delete(url) : HIDDEN.add(url); }
+  if(act === "applied"){ APPLIED.has(url) ? APPLIED.delete(url) : APPLIED.add(url); }
+  if(act === "saved"){ SAVED.has(url) ? SAVED.delete(url) : SAVED.add(url); }
+  saveSets(); render();
+});
+document.getElementById("csv").addEventListener("click", () => {
+  const rows = filteredRows();
+  const q = s => '"' + String(s==null?"":s).replace(/"/g,'""') + '"';
+  const csv = "company,title,location,fit,level,first_seen,url\n" + rows.map(j => [q(j.company),q(j.title),q(j.location),q(j.profile_fit),q(j.desc_label||""),q(j.first_seen),q(j.url)].join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download = "jobs.csv"; a.click();
+});
+document.getElementById("copy").addEventListener("click", async () => {
+  const txt = filteredRows().slice(0,50).map(j => j.title + " @ " + j.company + " — " + j.url).join("\n");
+  try { await navigator.clipboard.writeText(txt); alert("copied " + Math.min(50, filteredRows().length) + " links"); }
+  catch { prompt("copy:", txt); }
+});
+document.getElementById("open10").addEventListener("click", () => {
+  filteredRows().slice(0,10).forEach(j => window.open(j.url, "_blank"));
+});
+// update last-visit on unload so next visit highlights truly new postings
+window.addEventListener("beforeunload", () => {
+  const maxDay = JOBS.map(j => j.first_seen||"").sort().reverse()[0] || "";
+  if(maxDay) localStorage.setItem(LS.v, maxDay);
+});
 init();
 </script>
 </body>
